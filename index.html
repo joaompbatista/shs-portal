@@ -656,7 +656,7 @@ code{background:#f0f4f8;padding:2px 6px;border-radius:4px;font-family:monospace;
 // ══════════════════════════════════════════════
 var CLIENT_ID   = '369c96a7-5fa8-402b-83e9-c4453170f91b';
 var TENANT_ID   = 'baf50bb8-d7b1-4e21-98a3-6c00ebbe09ec';
-var SCOPES      = ['https://analysis.windows.net/powerbi/api/Dataset.ReadWrite.All'];
+var SCOPES      = ['https://analysis.windows.net/powerbi/api/.default'];
 var FABRIC_SQL  = 'https://api.fabric.microsoft.com/v1';
 // Update with your actual workspace and warehouse IDs from Fabric portal
 var WORKSPACE_ID  = '7709b8ff-1de3-427e-8535-dde0d5179281';
@@ -732,14 +732,19 @@ function clearAccount() {
 // ══════════════════════════════════════════════
 async function fabricQuery(sql) {
   if (!accessToken) throw new Error('Not authenticated');
-  var url = FABRIC_SQL + '/workspaces/' + WORKSPACE_ID + '/warehouses/' + WAREHOUSE_ID + '/sqlStatements';
+  var url = FABRIC_SQL + '/workspaces/' + WORKSPACE_ID + '/warehouses/' + WAREHOUSE_ID + '/executeQuery';
   var resp = await fetch(url, {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ statement: sql })
+    body: JSON.stringify({ query: sql })
   });
   if (!resp.ok) { var e = await resp.text(); throw new Error(e); }
-  return await resp.json();
+  var json = await resp.json();
+  // Normalize response: executeQuery returns {results:[{rows:[]}]}, wrap to {results:{rows:[]}}
+  if (Array.isArray(json.results)) {
+    return { results: { rows: json.results[0] ? json.results[0].rows || [] : [] } };
+  }
+  return json;
 }
 
 // ══════════════════════════════════════════════
