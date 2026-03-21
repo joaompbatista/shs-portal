@@ -656,11 +656,12 @@ code{background:#f0f4f8;padding:2px 6px;border-radius:4px;font-family:monospace;
 // ══════════════════════════════════════════════
 var CLIENT_ID   = '369c96a7-5fa8-402b-83e9-c4453170f91b';
 var TENANT_ID   = 'baf50bb8-d7b1-4e21-98a3-6c00ebbe09ec';
-var SCOPES      = ['https://analysis.windows.net/powerbi/api/Warehouse.Execute.All'];
+var SCOPES      = ['https://analysis.windows.net/powerbi/api/Dataset.ReadWrite.All'];
 var FABRIC_SQL  = 'https://api.fabric.microsoft.com/v1';
 // Update with your actual workspace and warehouse IDs from Fabric portal
 var WORKSPACE_ID  = '7709b8ff-1de3-427e-8535-dde0d5179281';
 var WAREHOUSE_ID  = '4e495f86-2bd0-4e4f-8539-2796d40f05cd';
+var DATASET_ID    = 'c7e9c68c-bd49-4e19-a0eb-2523edc064af';
 
 // ══════════════════════════════════════════════
 // MSAL AUTH
@@ -730,50 +731,73 @@ function clearAccount() {
 // ══════════════════════════════════════════════
 // FABRIC API — execute SQL
 // ══════════════════════════════════════════════
-async function fabricQuery(sql) {
+async function fabricRead(sql) {
   if (!accessToken) throw new Error('Not authenticated');
-
-  // Step 1: Submit the SQL statement
-  var submitUrl = FABRIC_SQL + '/workspaces/' + WORKSPACE_ID + '/warehouses/' + WAREHOUSE_ID + '/sqlStatements';
-  var submitResp = await fetch(submitUrl, {
+  var dax = toDAX(sql);
+  var url = 'https://api.powerbi.com/v1.0/myorg/datasets/' + DATASET_ID + '/executeQueries';
+  var resp = await fetch(url, {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ statement: sql })
+    body: JSON.stringify({ queries: [{ query: dax }], serializerSettings: { includeNulls: true } })
   });
-  if (!submitResp.ok) { var e = await submitResp.text(); throw new Error(e); }
-  var submitJson = await submitResp.json();
-
-  // If response already has results (synchronous), return directly
-  if (submitJson.results && submitJson.results.rows) return submitJson;
-  if (submitJson.results && Array.isArray(submitJson.results)) {
-    return { results: { rows: submitJson.results[0] ? submitJson.results[0].rows || [] : [] } };
-  }
-
-  // Step 2: Poll for results if async (has statementId)
-  var statementId = submitJson.statementId || (submitJson.id);
-  if (!statementId) throw new Error('No statementId returned: ' + JSON.stringify(submitJson).slice(0,200));
-
-  var pollUrl = submitUrl + '/' + statementId;
-  for (var i = 0; i < 30; i++) {
-    await new Promise(function(r){ setTimeout(r, 1000); });
-    var pollResp = await fetch(pollUrl, {
-      headers: { 'Authorization': 'Bearer ' + accessToken }
-    });
-    if (!pollResp.ok) { var e2 = await pollResp.text(); throw new Error(e2); }
-    var pollJson = await pollResp.json();
-    var status = (pollJson.status || '').toLowerCase();
-    if (status === 'failed' || status === 'error') throw new Error(pollJson.error || JSON.stringify(pollJson));
-    if (pollJson.results) {
-      if (pollJson.results.rows) return pollJson;
-      if (Array.isArray(pollJson.results)) {
-        return { results: { rows: pollJson.results[0] ? pollJson.results[0].rows || [] : [] } };
-      }
-    }
-    if (status === 'succeeded' || status === 'completed') {
-      return { results: { rows: [] } };
+  if (!resp.ok) { var e = await resp.text(); throw new Error(e); }
+  var json = await resp.json();
+  var rows = [];
+  if (json.results && json.results[0] && json.results[0].tables && json.results[0].tables[0]) {
+    var rawRows = json.results[0].tables[0].rows || [];
+    if (rawRows.length > 0) {
+      var keys = Object.keys(rawRows[0]);
+      rows = rawRows.map(function(r) { return keys.map(function(k) { return r[k]; }); });
     }
   }
-  throw new Error('Query timed out after 30 seconds');
+  return { results: { rows: rows } };
+}
+
+async function fabricWrite(sql) {
+  if (!accessToken) throw new Error('Not authenticated');
+  var url = 'https://api.fabric.microsoft.com/v1/workspaces/' + WORKSPACE_ID + '/items/' + WAREHOUSE_ID + '/jobs/instances?jobType=RunQuery';
+  var resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ executionData: { query: sql } })
+  });
+  if (resp.status === 202 || resp.ok) return { results: { rows: [] } };
+  var e = await resp.text(); throw new Error(e);
+}
+
+async function fabricQuery(sql) {
+  var trimmed = sql.trim().toUpperCase();
+  if (trimmed.startsWith('SELECT')) return fabricRead(sql);
+  return fabricWrite(sql);
+}
+
+function toDAX(sql) {
+  if (sql.toUpperCase().indexOf('JOIN') !== -1) {
+    var fromMatch = sql.match(/FROM\s+(\w+)/i);
+    return fromMatch ? 'EVALUATE ' + fromMatch[1] : 'EVALUATE ' + sql;
+  }
+  var m = sql.match(/SELECT\s+(.+?)\s+FROM\s+(\w+)(\s+.*)?$/i);
+  if (!m) return 'EVALUATE ' + sql;
+  var cols = m[1].trim();
+  var table = m[2].trim();
+  var rest = (m[3] || '').trim();
+  if (cols === '*') return 'EVALUATE ' + table;
+  cols = cols.replace(/\b\w+\.(\w+)/g, '$1');
+  var colList = cols.split(',').map(function(c) {
+    c = c.trim();
+    var parts = c.split(/\s+AS\s+/i);
+    var colName = parts[0].trim();
+    var alias = parts[1] ? parts[1].trim() : colName;
+    return '"' + alias + '", ' + table + '[' + colName + ']';
+  }).join(', ');
+  var orderMatch = rest.match(/ORDER BY\s+(\w+)/i);
+  var dax = 'EVALUATE ';
+  if (orderMatch) {
+    dax += 'TOPN(10000, SELECTCOLUMNS(' + table + ', ' + colList + '), [' + orderMatch[1] + '], ASC)';
+  } else {
+    dax += 'SELECTCOLUMNS(' + table + ', ' + colList + ')';
+  }
+  return dax;
 }
 
 // ══════════════════════════════════════════════
