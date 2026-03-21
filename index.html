@@ -732,19 +732,48 @@ function clearAccount() {
 // ══════════════════════════════════════════════
 async function fabricQuery(sql) {
   if (!accessToken) throw new Error('Not authenticated');
-  var url = FABRIC_SQL + '/workspaces/' + WORKSPACE_ID + '/warehouses/' + WAREHOUSE_ID + '/executeQuery';
-  var resp = await fetch(url, {
+
+  // Step 1: Submit the SQL statement
+  var submitUrl = FABRIC_SQL + '/workspaces/' + WORKSPACE_ID + '/warehouses/' + WAREHOUSE_ID + '/sqlStatements';
+  var submitResp = await fetch(submitUrl, {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: sql })
+    body: JSON.stringify({ statement: sql })
   });
-  if (!resp.ok) { var e = await resp.text(); throw new Error(e); }
-  var json = await resp.json();
-  // Normalize response: executeQuery returns {results:[{rows:[]}]}, wrap to {results:{rows:[]}}
-  if (Array.isArray(json.results)) {
-    return { results: { rows: json.results[0] ? json.results[0].rows || [] : [] } };
+  if (!submitResp.ok) { var e = await submitResp.text(); throw new Error(e); }
+  var submitJson = await submitResp.json();
+
+  // If response already has results (synchronous), return directly
+  if (submitJson.results && submitJson.results.rows) return submitJson;
+  if (submitJson.results && Array.isArray(submitJson.results)) {
+    return { results: { rows: submitJson.results[0] ? submitJson.results[0].rows || [] : [] } };
   }
-  return json;
+
+  // Step 2: Poll for results if async (has statementId)
+  var statementId = submitJson.statementId || (submitJson.id);
+  if (!statementId) throw new Error('No statementId returned: ' + JSON.stringify(submitJson).slice(0,200));
+
+  var pollUrl = submitUrl + '/' + statementId;
+  for (var i = 0; i < 30; i++) {
+    await new Promise(function(r){ setTimeout(r, 1000); });
+    var pollResp = await fetch(pollUrl, {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    });
+    if (!pollResp.ok) { var e2 = await pollResp.text(); throw new Error(e2); }
+    var pollJson = await pollResp.json();
+    var status = (pollJson.status || '').toLowerCase();
+    if (status === 'failed' || status === 'error') throw new Error(pollJson.error || JSON.stringify(pollJson));
+    if (pollJson.results) {
+      if (pollJson.results.rows) return pollJson;
+      if (Array.isArray(pollJson.results)) {
+        return { results: { rows: pollJson.results[0] ? pollJson.results[0].rows || [] : [] } };
+      }
+    }
+    if (status === 'succeeded' || status === 'completed') {
+      return { results: { rows: [] } };
+    }
+  }
+  throw new Error('Query timed out after 30 seconds');
 }
 
 // ══════════════════════════════════════════════
