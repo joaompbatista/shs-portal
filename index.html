@@ -274,9 +274,9 @@ code{background:#f0f4f8;padding:2px 6px;border-radius:4px;font-family:monospace;
   <div class="block">
     <h3>Data Flow — Overview</h3>
     <div class="af">
-      <div class="an" style="background:#E8DAEF;border-color:#6C3483">✏️ <strong>Data Entry App</strong><small>HTML/JS · Azure AD Auth</small><small>Web-based data input</small></div>
+      <div class="an" style="background:#E8DAEF;border-color:#6C3483">✏️ <strong>Data Entry App</strong><small>HTML/JS · Azure AD Auth</small><small>🚧 In development</small></div>
       <div class="aa">→</div>
-      <div class="an" style="background:#FDEBD0;border-color:#E67E22">⚡ <strong>Fabric REST API</strong><small>SQL Endpoint</small><small>Write to Warehouse</small></div>
+      <div class="an" style="background:#FDEBD0;border-color:#E67E22">⚡ <strong>Fabric REST API</strong><small>SQL Endpoint</small><small>🚧 In development</small></div>
       <div class="aa">→</div>
       <div class="an">🗄️ <strong>Fabric Warehouse</strong><small>Mock Projects · dbo schema</small><small>9 tables · T-SQL</small></div>
     </div>
@@ -405,15 +405,6 @@ code{background:#f0f4f8;padding:2px 6px;border-radius:4px;font-family:monospace;
     <div class="bi-header">📊 SHS Portfolio Dashboard — UNDP · Mock Projects Workspace</div>
     <iframe class="bi-frame" src="https://app.powerbi.com/reportEmbed?reportId=a9fc25bb-df10-40f8-8c7b-c5121de92f9a&autoAuth=true&ctid=baf50bb8-d7b1-4e21-98a3-6c00ebbe09ec" allowfullscreen></iframe>
   </div>
-  <div class="block">
-    <h3>📋 Report Pages</h3>
-    <table class="dt">
-      <tr><th>Page</th><th>Purpose</th><th>Key Visuals</th></tr>
-      <tr><td><strong>1 — Portfolio Overview</strong></td><td>Global portfolio status at a glance</td><td>Map by country, budget vs disbursed by region, project status table, KPI cards</td></tr>
-      <tr><td><strong>2 — KPI Performance</strong></td><td>Achievement tracking by component and project</td><td>Avg achievement % by component, target vs actual scatter, data quality flags</td></tr>
-      <tr><td><strong>3 — Pipeline</strong></td><td>Grant opportunity pipeline management</td><td>Funnel by stage, pipeline by region, high-priority opportunities table</td></tr>
-    </table>
-  </div>
 </div>
 
 <!-- ══════════════════════════════════
@@ -471,6 +462,7 @@ code{background:#f0f4f8;padding:2px 6px;border-radius:4px;font-family:monospace;
 <div id="dataapp" class="section">
   <div class="ph"><h2>✏️ Data Entry App</h2><p>Insert and edit records directly in the Fabric Warehouse. Requires Microsoft sign-in.</p></div>
   <div class="divider"></div>
+  <div class="alert an-warn"><span class="alert-icon">🚧</span><div><strong>In development.</strong> The current version supports reading data from the semantic model (tables and dropdowns load correctly). Write operations (insert/update) to the Fabric Warehouse are not yet functional via browser — direct T-SQL DML through the Fabric REST API is not supported from a web app due to CORS restrictions. A solution via Power Automate or Power Apps is planned.</div></div>
 
   <div id="appLoginWall" class="login-wall" style="display:none">
     <div class="big-icon">🔐</div>
